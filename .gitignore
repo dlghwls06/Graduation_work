@@ -1,0 +1,25 @@
+# node.js
+**/node_modules/
+**/.env
+**/.env.*  
+
+# macOS
+.DS_Store
+
+# logs
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Expo
+**/.expo/
+**/.expo-shared/
+
+# 기타
+**/dist/
+**/build/
