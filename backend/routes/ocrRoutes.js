@@ -51,6 +51,14 @@ router.post('/upload', upload.single('image'), async (req, res) => {
     const fields = ocrResponse.data.images[0].fields;
     const text = fields.map(f => f.inferText).join('\n');
     
+    fields.forEach((field, index) => {
+  console.log(`[${index + 1}] 텍스트: ${field.inferText}`);
+  console.log(`좌표:`);
+  field.boundingPoly.vertices.forEach((vertex, i) => {
+    console.log(`   - 꼭짓점 ${i + 1}: x=${vertex.x}, y=${vertex.y}`);
+  });
+  console.log('--------------------------');
+});
 
     res.json({
       text,
