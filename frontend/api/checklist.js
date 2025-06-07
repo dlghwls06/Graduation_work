@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'http://192.168.1.193:4000';
+const BASE_URL = 'http://192.168.1.176:4000';
 
 export const getChecklistByContractId = async (contractId) => {
     try {

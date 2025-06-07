@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const checklistRoutes = require('./routes/checklist');
 const ocrRoutes = require('./routes/ocrRoutes');
+const clovaRoutes = require('./routes/clovaRoutes');
+const documentsRoutes = require('./routes/documents')
+const path = require('path');
 
 const mysql = require('mysql2/promise'); // ✅ 이 줄이 꼭 먼저 있어야 함
 require('dotenv').config();
@@ -11,6 +14,8 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // 반드시 있어야 함!
+
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -30,6 +35,9 @@ app.use((req, res, next) => {
 
 app.use('/checklist', checklistRoutes);
 app.use('/ocr', ocrRoutes);
+app.use('/clova', clovaRoutes);
+app.use('/document', documentsRoutes);
+
 
 
 

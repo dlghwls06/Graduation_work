@@ -23,7 +23,6 @@ router.get('/:contractId', async (req, res) => {
          ORDER BY contract_checklist_step_id`,
         [phase.contract_title_step_id]
       );
-      console.log(sections)
 
       const sectionItems = [];
 
