@@ -316,6 +316,67 @@ router.post('/upload', upload.single('image'), async (req, res) => {
       console.log(`   - 끝 좌표 (2,3):`, sentence.coordEnd);
     });
 
+    //DB에 저장
+    const [insertResult] = await req.db.execute(
+      `INSERT INTO user_contract_progress (users_contracts_id, file_url) VALUES (?, ?)`,
+      [1, `/uploads/${file.filename}`]
+    );
+    const situationId = insertResult.insertId;
+    for (let i = 1; i < clauseList.length; i++) {
+      const clause = clauseList[i];
+
+      const startX = clause.coordStart?.[0]?.x ?? null;
+      const startY = clause.coordStart?.[0]?.y ?? null;
+      const endX = clause.coordEnd?.[0]?.x ?? null;
+      const endY = clause.coordEnd?.[0]?.y ?? null;
+
+
+      await req.db.execute(
+      `INSERT INTO ocr_result (
+        situation_id,
+        risk_message,
+        one_coordinate,
+        two_coordinate,
+        three_coordinate,
+        four_coordinate
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        situationId,
+        clause.text,
+        clause.coordStart?.[0]?.x != null && clause.coordStart?.[0]?.y != null
+          ? `${clause.coordStart[0].x},${clause.coordStart[0].y}`
+          : null,
+        clause.coordEnd?.[0]?.x != null && clause.coordEnd?.[0]?.y != null
+          ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}`
+          : null,
+        clause.coordEnd?.[1]?.x != null && clause.coordEnd?.[1]?.y != null
+          ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}`
+          : null,
+        clause.coordStart?.[1]?.x != null && clause.coordStart?.[1]?.y != null
+          ? `${clause.coordStart[1].x},${clause.coordStart[1].y}`
+          : null,
+      ]
+    );
+      // await req.db.execute(
+      //   `INSERT INTO ocr_result (
+      //     situation_id,
+      //     risk_message,
+      //     one_coordinate,
+      //     two_coordinate,
+      //     three_coordinate,
+      //     four_coordinate
+      //   ) VALUES (?, ?, ?, ?, ?, ?)`,
+      //   [
+      //     situationId,
+      //     clause.text,
+      //     startX !== null && startY !== null ? `${startX},${startY}` : null,
+      //     clause.coordEnd?.[0]?.x !== undefined && clause.coordEnd?.[0]?.y !== undefined ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}` : null,
+      //     clause.coordEnd?.[1]?.x !== undefined && clause.coordEnd?.[1]?.y !== undefined ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}` : null,
+      //     clause.coordStart?.[1]?.x !== undefined && clause.coordStart?.[1]?.y !== undefined ? `${clause.coordStart[1].x},${clause.coordStart[1].y}` : null,
+      //   ]
+      // );
+    }
+
 //     let inSpecialClause = false;
 // let currentClause = '';
 // let clauseList = [];
