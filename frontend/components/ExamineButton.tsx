@@ -27,7 +27,7 @@ export default function ExamineButton() {
 
       try {
         setUploading(true); // 로딩 시작
-        const response = await fetch('http://192.168.1.176:4000/ocr/upload', {
+        const response = await fetch('http://192.168.1.193:4000/ocr/upload', {
           method: 'POST',
           headers: {
             'Content-Type': 'multipart/form-data',
