@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
 
 router.get('/:contractId', async (req, res) => {
   const { contractId } = req.params;
 
   try {
     // 1. 계약 대제목 단계들 조회 (ex. 계약 전, 계약 체결 시 ...)
-    const [phases] = await db.query(
+    const [phases] = await req.db.query(
       `SELECT * FROM contract_title_step 
        WHERE contracts_id = ? 
        ORDER BY contract_title_step_id`,
@@ -18,18 +17,19 @@ router.get('/:contractId', async (req, res) => {
 
     for (const [phaseIdx, phase] of phases.entries()) {
       // 2. 각 대제목 안의 소제목들 (checklist sections)
-      const [sections] = await db.query(
+      const [sections] = await req.db.query(
         `SELECT * FROM contract_checklist_step 
          WHERE contract_title_step_id = ? 
          ORDER BY contract_checklist_step_id`,
         [phase.contract_title_step_id]
       );
+      console.log(sections)
 
       const sectionItems = [];
 
       for (const section of sections) {
         // 3. 각 소제목 안의 실제 항목들
-        const [items] = await db.query(
+        const [items] = await req.db.query(
           `SELECT * FROM contract_checklist_content 
            WHERE contract_checklist_step_id = ? 
            ORDER BY step_content_id`,
