@@ -6,25 +6,39 @@ const multer = require('multer');
 const router = express.Router();
 require('dotenv').config();
 
-const upload = multer({ dest: 'public/uploads/' });
+// ✅ 확장자 포함 저장을 위한 multer 설정
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'public/uploads/');
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname); // .jpg, .png 등
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({ storage });
 
 router.post('/upload', upload.single('image'), async (req, res) => {
   const file = req.file;
+  const { width, height } = req.body;
+  const imageWidth = parseInt(width, 10);
+  const imageHeight = parseInt(height, 10);
+
+  console.log('!!클라이언트 전달 해상도:', imageWidth, imageHeight);
+
 
   if (!file) {
     return res.status(400).json({ message: '이미지를 업로드해야 합니다.' });
   }
 
   try {
-    // 이미지 파일을 base64로 인코딩
+    // 이미지 base64로 인코딩
     const imagePath = path.join(__dirname, '..', file.path);
     const imageBuffer = fs.readFileSync(imagePath);
     const base64Image = imageBuffer.toString('base64');
 
-    console.log("asdda",process.env.OCR_KEY)
-    console.log("URL",process.env.OCR_URL)
-
-    // OCR API 요청
+    // OCR API 호출
     const ocrResponse = await axios.post(
       process.env.OCR_URL,
       {
@@ -47,10 +61,10 @@ router.post('/upload', upload.single('image'), async (req, res) => {
       }
     );
 
-    // OCR 결과에서 텍스트 추출
     const fields = ocrResponse.data.images[0].fields;
     const text = fields.map(f => f.inferText).join('\n');
-    
+
+    // 특약사항 문장 추출
     let inSpecialClause = false;
     let currentClause = '';
     let clauseList = [];
@@ -58,50 +72,43 @@ router.post('/upload', upload.single('image'), async (req, res) => {
     let currentStart = null;
     let currentEnd = null;
 
-    fields.forEach((field, idx) => {
+    fields.forEach((field) => {
       const word = field.inferText.trim();
       const coords = field.boundingPoly?.vertices;
 
-      // 1단계: "[특약사항]" 포함 여부 확인
       if (!inSpecialClause && word.includes('특약사항')) {
         inSpecialClause = true;
         return;
       }
       if (!inSpecialClause || endDetected) return;
 
-      // 2단계: "본 계약을" 등장 시 종료
       if (word.includes('본') && word.includes('계약')) {
         if (currentClause) {
           clauseList.push({
             text: currentClause.trim(),
-            coordStart: currentStart,  // 꼭짓점 1,4
-            coordEnd: currentEnd       // 꼭짓점 2,3
+            coordStart: currentStart,
+            coordEnd: currentEnd,
           });
         }
         endDetected = true;
         return;
       }
 
-      // 3단계: 숫자. 혹은 숫자.다음단어 패턴 감지 (예: "1.현", "2.등기부")
       const match = word.match(/^(\d+)\.(.*)/);
       if (match) {
-        // 이전 문장 저장
         if (currentClause) {
           clauseList.push({
             text: currentClause.trim(),
             coordStart: currentStart,
-            coordEnd: currentEnd
+            coordEnd: currentEnd,
           });
         }
-
-        // 새 문장 시작
         currentClause = `${match[1]}. ${match[2]} `;
         currentStart = coords?.[0] && coords?.[3] ? [coords[0], coords[3]] : null;
         currentEnd = coords?.[1] && coords?.[2] ? [coords[1], coords[2]] : null;
         return;
       }
 
-      // 일반 단어는 이어붙이고 좌표 갱신
       if (!currentStart && coords?.[0] && coords?.[3]) {
         currentStart = [coords[0], coords[3]];
       }
@@ -112,97 +119,83 @@ router.post('/upload', upload.single('image'), async (req, res) => {
       currentClause += word + ' ';
     });
 
-    // 마지막 문장 추가
     if (currentClause && !endDetected) {
       clauseList.push({
         text: currentClause.trim(),
         coordStart: currentStart,
-        coordEnd: currentEnd
+        coordEnd: currentEnd,
       });
     }
 
-    // // 위험조항 문장 좌표출력
-    // console.log('✅ 추출된 특약사항 문장들:');
-    // clauseList.forEach((sentence, index) => {
-    //   console.log(`[${index + 1}] ${sentence.text}`);
-    //   console.log(`   - 시작 좌표 (1,4):`, sentence.coordStart);
-    //   console.log(`   - 끝 좌표 (2,3):`, sentence.coordEnd);
-    // });
-
-    //DB에 저장
+    // 🔸 DB 저장
+    const fileUrl = `/uploads/${file.filename}`;
     const [insertResult] = await req.db.execute(
-      `INSERT INTO user_contract_progress (users_contracts_id, file_url) VALUES (?, ?)`,
-      [1, `/uploads/${file.filename}`]
+      `INSERT INTO user_contract_progress (users_contracts_id, file_url, image_width, image_height) VALUES (?, ?, ?, ?)`,
+      [1, fileUrl, imageWidth, imageHeight]
+      
     );
     const situationId = insertResult.insertId;
+
     for (let i = 1; i < clauseList.length; i++) {
       const clause = clauseList[i];
-
-      const startX = clause.coordStart?.[0]?.x ?? null;
-      const startY = clause.coordStart?.[0]?.y ?? null;
-      const endX = clause.coordEnd?.[0]?.x ?? null;
-      const endY = clause.coordEnd?.[0]?.y ?? null;
-
-
       await req.db.execute(
-      `INSERT INTO ocr_result (
-        situation_id,
-        risk_message,
-        one_coordinate,
-        two_coordinate,
-        three_coordinate,
-        four_coordinate
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        situationId,
-        clause.text,
-        clause.coordStart?.[0]?.x != null && clause.coordStart?.[0]?.y != null
-          ? `${clause.coordStart[0].x},${clause.coordStart[0].y}`
-          : null,
-        clause.coordEnd?.[0]?.x != null && clause.coordEnd?.[0]?.y != null
-          ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}`
-          : null,
-        clause.coordEnd?.[1]?.x != null && clause.coordEnd?.[1]?.y != null
-          ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}`
-          : null,
-        clause.coordStart?.[1]?.x != null && clause.coordStart?.[1]?.y != null
-          ? `${clause.coordStart[1].x},${clause.coordStart[1].y}`
-          : null,
-      ]
-    );
-      
+        `INSERT INTO ocr_result (
+          situation_id,
+          risk_message,
+          one_coordinate,
+          two_coordinate,
+          three_coordinate,
+          four_coordinate
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          situationId,
+          clause.text,
+          clause.coordStart?.[0] ? `${clause.coordStart[0].x},${clause.coordStart[0].y}` : null,
+          clause.coordEnd?.[0] ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}` : null,
+          clause.coordEnd?.[1] ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}` : null,
+          clause.coordStart?.[1] ? `${clause.coordStart[1].x},${clause.coordStart[1].y}` : null,
+        ]
+      );
     }
-        // FastAPI로 문장들만 전송
-const clauseTexts = clauseList.map(clause => clause.text);
 
-try {
-  const fastApiResponse = await axios.post('http://192.168.1.176:5050/analyze', {
-    situation_id: situationId,
-    sentences: clauseTexts
-  });
+    // 🔸 FastAPI로 문장 전송
+    const clauseTexts = clauseList.map(clause => clause.text);
+    try {
+      const fastApiResponse = await axios.post('http://192.168.1.176:5050/analyze', {
+        situation_id: situationId,
+        sentences: clauseTexts
+      });
+      console.log("✅ FastAPI 응답 결과:", fastApiResponse.data);
+    } catch (err) {
+      console.error("❌ FastAPI 통신 실패:", err.message);
+    }
 
-  console.log("✅ FastAPI 응답 결과:", fastApiResponse.data);
-} catch (err) {
-  console.error("❌ FastAPI 통신 실패:", err.message);
-}
-
-
-
+    // 🔸 클라이언트 응답
     res.json({
       text,
       filename: file.filename,
-      path: `/uploads/${file.filename}`,
+      path: fileUrl,
     });
+
   } catch (error) {
     console.error('OCR 실패:', error.response?.data || error.message);
     res.status(500).json({ message: 'OCR 처리 실패' });
   }
 });
 
-
 module.exports = router;
 
 
+
+// const express = require('express');
+// const fs = require('fs');
+// const path = require('path');
+// const axios = require('axios');
+// const multer = require('multer');
+// const router = express.Router();
+// require('dotenv').config();
+
+// const upload = multer({ dest: 'public/uploads/' });
 
 // router.post('/upload', upload.single('image'), async (req, res) => {
 //   const file = req.file;
@@ -246,139 +239,143 @@ module.exports = router;
 //     // OCR 결과에서 텍스트 추출
 //     const fields = ocrResponse.data.images[0].fields;
 //     const text = fields.map(f => f.inferText).join('\n');
-  
-//     //특약사항
-//     let clauseSentences = [];
+    
+//     let inSpecialClause = false;
 //     let currentClause = '';
-//     let lastWordWasNumber = false;
+//     let clauseList = [];
+//     let endDetected = false;
+//     let currentStart = null;
+//     let currentEnd = null;
 
-//     fields.forEach((field) => {
+//     fields.forEach((field, idx) => {
 //       const word = field.inferText.trim();
+//       const coords = field.boundingPoly?.vertices;
 
-//       if (/^\d+$/.test(word)) {
-//         // 숫자만 있을 경우 (예: "1")
-//         lastWordWasNumber = word;
-//       } else if (word === '.' && lastWordWasNumber) {
-//         // 이전에 숫자가 있었고 이번에 "."이 오면 새로운 항목 시작
-//         if (currentClause) {
-//           clauseSentences.push(currentClause.trim());
-//         }
-//         currentClause = lastWordWasNumber + '.' + ' ';
-//         lastWordWasNumber = false;
-//         isInClause = true;
-//       } else {
-//         if (lastWordWasNumber) {
-//           // "1" 다음에 "."이 아닌 다른 단어가 왔다면 그냥 이어 붙임
-//           currentClause += lastWordWasNumber + ' ';
-//           lastWordWasNumber = false;
-//         }
-
-//         currentClause += word + ' ';
+//       // 1단계: "[특약사항]" 포함 여부 확인
+//       if (!inSpecialClause && word.includes('특약사항')) {
+//         inSpecialClause = true;
+//         return;
 //       }
+//       if (!inSpecialClause || endDetected) return;
+
+//       // 2단계: "본 계약을" 등장 시 종료
+//       if (word.includes('본') && word.includes('계약')) {
+//         if (currentClause) {
+//           clauseList.push({
+//             text: currentClause.trim(),
+//             coordStart: currentStart,  // 꼭짓점 1,4
+//             coordEnd: currentEnd       // 꼭짓점 2,3
+//           });
+//         }
+//         endDetected = true;
+//         return;
+//       }
+
+//       // 3단계: 숫자. 혹은 숫자.다음단어 패턴 감지 (예: "1.현", "2.등기부")
+//       const match = word.match(/^(\d+)\.(.*)/);
+//       if (match) {
+//         // 이전 문장 저장
+//         if (currentClause) {
+//           clauseList.push({
+//             text: currentClause.trim(),
+//             coordStart: currentStart,
+//             coordEnd: currentEnd
+//           });
+//         }
+
+//         // 새 문장 시작
+//         currentClause = `${match[1]}. ${match[2]} `;
+//         currentStart = coords?.[0] && coords?.[3] ? [coords[0], coords[3]] : null;
+//         currentEnd = coords?.[1] && coords?.[2] ? [coords[1], coords[2]] : null;
+//         return;
+//       }
+
+//       // 일반 단어는 이어붙이고 좌표 갱신
+//       if (!currentStart && coords?.[0] && coords?.[3]) {
+//         currentStart = [coords[0], coords[3]];
+//       }
+//       if (coords?.[1] && coords?.[2]) {
+//         currentEnd = [coords[1], coords[2]];
+//       }
+
+//       currentClause += word + ' ';
 //     });
 
 //     // 마지막 문장 추가
-//     if (currentClause) {
-//       clauseSentences.push(currentClause.trim());
+//     if (currentClause && !endDetected) {
+//       clauseList.push({
+//         text: currentClause.trim(),
+//         coordStart: currentStart,
+//         coordEnd: currentEnd
+//       });
 //     }
 
-//     // 출력
-//     console.log('✅ Numbered clauses with split dot handling:');
-//     clauseSentences.forEach((sentence, index) => {
-//       console.log(`[${index + 1}] ${sentence}`);
-//     });
-
-//     let fullText = clauseSentences.join(' ');
-
-//     // "[ 특약사항 ]" 이후만 남기기
-//     const specialClauseStart = fullText.indexOf('[ 특약사항 ]');
-//     if (specialClauseStart === -1) {
-//       console.log('❌ "[ 특약사항 ]" 항목을 찾을 수 없습니다.');
-//       return;
-//     }
-
-//     // "[ 특약사항 ]" 이후 텍스트 추출
-//     let specialClauseText = fullText.substring(specialClauseStart);
-
-//     // "본 계약을 증명하기 위하여"가 있다면 해당 위치까지만 자르기
-//     const endClauseIndex = specialClauseText.indexOf('본 계약을 증명하기 위하여');
-//     if (endClauseIndex !== -1) {
-//       specialClauseText = specialClauseText.substring(0, endClauseIndex);
-//     }
-
-//     // 숫자. 으로 시작하는 항목들 정규식 분리
-//     const clauseSplitRegex = /(?=\d+\.\s?)/g;
-//     const splitClauses = specialClauseText
-//       .split(clauseSplitRegex)
-//       .map(clause => clause.trim())
-//       .filter(clause => /^\d+\./.test(clause));
-
-//     // 출력
-//     console.log('✅ [ 특약사항 ] 이후 번호 항목별 문장 리스트 (종료 문장 포함):');
-//     splitClauses.forEach((sentence, index) => {
-//       console.log(`[${index + 1}] ${sentence}`);
-//     });
-
-//     // 번호 제거된 문장 리스트 생성
-//     const cleanedClauses = splitClauses.map((clause) => {
-//       return clause.replace(/^\d+\.\s*/, '').trim();
-//     });
-
-//     // 결과 출력
-//     console.log('✅ 번호 제거된 특약사항 문장 리스트:');
-//     cleanedClauses.forEach((clause, index) => {
-//       console.log(`${clause}`);
-//     });
-
-
-//   //   fields.forEach((field, index) => {
-//   //     console.log(`[${index + 1}] 텍스트: ${field.inferText}`);
-//   //     console.log(`좌표:`);
-//   //     field.boundingPoly.vertices.forEach((vertex, i) => {
-//   //       console.log(`   - 꼭짓점 ${i + 1}: x=${vertex.x}, y=${vertex.y}`);
-//   //     });
-//   //     console.log('--------------------------');
-//   // });
-
-//       // console.log(fields)
-    
-//     //----------------법률 조항 -> 제 2조-----------------
-//     // let sentences = []; //제 x조 문항
-//     // let currentSentence = '';
-//     // let collecting = false;
-
-//     // fields.forEach((field, index) => {
-//     //   const word = field.inferText;
-
-//     //   // '제1조', '제2조' 등의 문장 시작점 감지
-//     //   if (word.startsWith('제') && word.endsWith('조')) {
-//     //     if (currentSentence) {
-//     //       sentences.push(currentSentence.trim());
-//     //     }
-//     //     currentSentence = word + ' ';
-//     //     collecting = true;
-//     //   } else if (collecting) {
-//     //     currentSentence += word + ' ';
-
-//     //     // 마침표가 나오면 문장 끝으로 간주
-//     //     if (word.includes('.')) {
-//     //       sentences.push(currentSentence.trim());
-//     //       currentSentence = '';
-//     //       collecting = false;
-//     //         }
-//     //       }
-//     //     });
-
-//     //     // 남은 문장이 있다면 추가
-//     //     if (currentSentence) {
-//     //       sentences.push(currentSentence.trim());
-//     //     }
-
-//     //     // 결과 출력
-//     //     sentences.forEach((sentence, i) => {
-//     //       console.log(`[문장 ${i + 1}] ${sentence}`);
+//     // // 위험조항 문장 좌표출력
+//     // console.log('✅ 추출된 특약사항 문장들:');
+//     // clauseList.forEach((sentence, index) => {
+//     //   console.log(`[${index + 1}] ${sentence.text}`);
+//     //   console.log(`   - 시작 좌표 (1,4):`, sentence.coordStart);
+//     //   console.log(`   - 끝 좌표 (2,3):`, sentence.coordEnd);
 //     // });
-//     // ------------------------------------------------
+
+//     //DB에 저장
+//     const [insertResult] = await req.db.execute(
+//       `INSERT INTO user_contract_progress (users_contracts_id, file_url) VALUES (?, ?)`,
+//       [1, `/uploads/${file.filename}`]
+//     );
+//     const situationId = insertResult.insertId;
+//     for (let i = 1; i < clauseList.length; i++) {
+//       const clause = clauseList[i];
+
+//       const startX = clause.coordStart?.[0]?.x ?? null;
+//       const startY = clause.coordStart?.[0]?.y ?? null;
+//       const endX = clause.coordEnd?.[0]?.x ?? null;
+//       const endY = clause.coordEnd?.[0]?.y ?? null;
+
+
+//       await req.db.execute(
+//       `INSERT INTO ocr_result (
+//         situation_id,
+//         risk_message,
+//         one_coordinate,
+//         two_coordinate,
+//         three_coordinate,
+//         four_coordinate
+//       ) VALUES (?, ?, ?, ?, ?, ?)`,
+//       [
+//         situationId,
+//         clause.text,
+//         clause.coordStart?.[0]?.x != null && clause.coordStart?.[0]?.y != null
+//           ? `${clause.coordStart[0].x},${clause.coordStart[0].y}`
+//           : null,
+//         clause.coordEnd?.[0]?.x != null && clause.coordEnd?.[0]?.y != null
+//           ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}`
+//           : null,
+//         clause.coordEnd?.[1]?.x != null && clause.coordEnd?.[1]?.y != null
+//           ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}`
+//           : null,
+//         clause.coordStart?.[1]?.x != null && clause.coordStart?.[1]?.y != null
+//           ? `${clause.coordStart[1].x},${clause.coordStart[1].y}`
+//           : null,
+//       ]
+//     );
+      
+//     }
+//         // FastAPI로 문장들만 전송
+// const clauseTexts = clauseList.map(clause => clause.text);
+
+// try {
+//   const fastApiResponse = await axios.post('http://192.168.1.176:5050/analyze', {
+//     situation_id: situationId,
+//     sentences: clauseTexts
+//   });
+
+//   console.log("✅ FastAPI 응답 결과:", fastApiResponse.data);
+// } catch (err) {
+//   console.error("❌ FastAPI 통신 실패:", err.message);
+// }
+
+
 
 //     res.json({
 //       text,
@@ -392,137 +389,4 @@ module.exports = router;
 // });
 
 
-// await req.db.execute(
-      //   `INSERT INTO ocr_result (
-      //     situation_id,
-      //     risk_message,
-      //     one_coordinate,
-      //     two_coordinate,
-      //     three_coordinate,
-      //     four_coordinate
-      //   ) VALUES (?, ?, ?, ?, ?, ?)`,
-      //   [
-      //     situationId,
-      //     clause.text,
-      //     startX !== null && startY !== null ? `${startX},${startY}` : null,
-      //     clause.coordEnd?.[0]?.x !== undefined && clause.coordEnd?.[0]?.y !== undefined ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}` : null,
-      //     clause.coordEnd?.[1]?.x !== undefined && clause.coordEnd?.[1]?.y !== undefined ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}` : null,
-      //     clause.coordStart?.[1]?.x !== undefined && clause.coordStart?.[1]?.y !== undefined ? `${clause.coordStart[1].x},${clause.coordStart[1].y}` : null,
-      //   ]
-      // );
-
-
-      //     let inSpecialClause = false;
-// let currentClause = '';
-// let clauseList = [];
-// let endDetected = false;
-// let currentStart = null;
-// let currentEnd = null;
-
-// fields.forEach((field, idx) => {
-//   const word = field.inferText.trim();
-//   const coords = field.boundingPoly?.vertices;
-
-//   // 1단계: "[특약사항]" 포함 여부 확인
-//   if (!inSpecialClause && word.includes('특약사항')) {
-//     inSpecialClause = true;
-//     return;
-//   }
-//   if (!inSpecialClause || endDetected) return;
-
-//   // 2단계: "본 계약을" 등장 시 종료
-//   if (word.includes('본') && word.includes('계약')) {
-//     if (currentClause) {
-//       clauseList.push({
-//         text: currentClause.trim(),
-//         coordStart: currentStart,
-//         coordEnd: currentEnd
-//       });
-//     }
-//     endDetected = true;
-//     return;
-//   }
-
-//   // 3단계: 숫자. 혹은 숫자.다음단어 패턴 감지 (예: "1.현", "2.등기부")
-//   const match = word.match(/^(\d+)\.(.*)/);
-//   if (match) {
-//     // 기존 문장 저장
-//     if (currentClause) {
-//       clauseList.push({
-//         text: currentClause.trim(),
-//         coordStart: currentStart,
-//         coordEnd: currentEnd
-//       });
-//     }
-
-//     // 새 문장 시작
-//     currentClause = `${match[1]}. ${match[2]} `;
-//     currentStart = coords?.[0] && coords?.[1] ? [coords[0], coords[1]] : null;
-//     currentEnd = coords?.[2] && coords?.[3] ? [coords[2], coords[3]] : null;
-//     return;
-//   }
-
-//   // 일반 단어는 이어붙이고 좌표 갱신
-//   if (!currentStart && coords?.[0] && coords?.[1]) {
-//     currentStart = [coords[0], coords[1]];
-//   }
-//   if (coords?.[2] && coords?.[3]) {
-//     currentEnd = [coords[2], coords[3]];
-//   }
-
-//   currentClause += word + ' ';
-// });
-
-// // 마지막 문장 추가
-// if (currentClause && !endDetected) {
-//   clauseList.push({
-//     text: currentClause.trim(),
-//     coordStart: currentStart,
-//     coordEnd: currentEnd
-//   });
-// }
-
-// // ✅ 출력
-// console.log('✅ 추출된 특약사항 문장들:');
-// clauseList.forEach((sentence, index) => {
-//   console.log(`[${index + 1}] ${sentence.text}`);
-//   console.log(`   - 시작 꼭짓점 1,2:`, sentence.coordStart);
-//   console.log(`   - 끝 꼭짓점 3,4:`, sentence.coordEnd);
-// });
-
-
-
-
-    // 확인하고 싶은 단어 리스트
-    // const targetWords = ['1.현', '한다 )', '2.등기부상', ')이다.'];
-
-    // console.log('🔍 특정 단어 좌표 확인:');
-
-    // fields.forEach((field) => {
-    //   const word = field.inferText.trim();
-
-    //   if (targetWords.includes(word)) {
-    //     const vertices = field.boundingPoly?.vertices;
-    //     console.log(`\n📌 단어: "${word}"`);
-    //     if (vertices && vertices.length === 4) {
-    //       console.log(` - 꼭짓점 1 (좌상단):`, vertices[0]);
-    //       console.log(` - 꼭짓점 2 (우상단):`, vertices[1]);
-    //       console.log(` - 꼭짓점 3 (우하단):`, vertices[2]);
-    //       console.log(` - 꼭짓점 4 (좌하단):`, vertices[3]);
-    //     } else {
-    //       console.log(' → 좌표 정보 없음');
-    //     }
-    //   }
-    // });
-    
-      
-  //   fields.forEach((field, index) => {
-  //     console.log(`[${index + 1}] 텍스트: ${field.inferText}`);
-  //     console.log(`좌표:`);
-  //     field.boundingPoly.vertices.forEach((vertex, i) => {
-  //       console.log(`   - 꼭짓점 ${i + 1}: x=${vertex.x}, y=${vertex.y}`);
-  //     });
-  //     console.log('--------------------------');
-  // });
-
-      // console.log(fields)
+// module.exports = router;

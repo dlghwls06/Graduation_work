@@ -1,12 +1,14 @@
 import { useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
-import React, { useCallback, useState } from 'react';
+import { router } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
@@ -30,6 +32,7 @@ export default function UploadedDocuments() {
         try {
           const response = await axios.get('http://192.168.1.176:4000/document/documents');
           setUploadedDocs(response.data);
+          console.log("ㅇㅁㄴㅇㄴㅁㅇ",response.data)
         } catch (error) {
           console.error('문서 불러오기 실패:', error);
         } finally {
@@ -58,18 +61,23 @@ export default function UploadedDocuments() {
         renderItem={({ item }) => (
           <View style={styles.cardWrapper}>
             <Text style={styles.date}>{item.date}</Text>
-            <View style={styles.card}>
-              {item.file_url ? (
-                <Image source={{ uri: item.file_url }} style={styles.image} />
-              ) : (
-                <View style={styles.imagePlaceholder} />
-              )}
-              <View style={styles.textContent}>
-                <Text style={styles.title}>{item.title}</Text>
-                <Text style={styles.type}>{item.type}</Text>
-                <Text style={styles.risk}>위험 문장 : {item.riskCount}</Text>
+            <TouchableOpacity
+              onPress={() => router.push(`/documents/documentDetail?situationId=${item.id}`)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.card}>
+                {item.file_url ? (
+                  <Image source={{ uri: item.file_url }} style={styles.image} />
+                ) : (
+                  <View style={styles.imagePlaceholder} />
+                )}
+                <View style={styles.textContent}>
+                  <Text style={styles.title}>{item.title}</Text>
+                  <Text style={styles.type}>{item.type}</Text>
+                  <Text style={styles.risk}>위험 문장 : {item.riskCount}</Text>
+                </View>
               </View>
-            </View>
+            </TouchableOpacity>
           </View>
         )}
       />
@@ -83,15 +91,14 @@ const styles = StyleSheet.create({
   cardWrapper: { marginBottom: 24 },
   date: { fontSize: 13, color: '#888', marginBottom: 8 },
   card: {
-  flexDirection: 'row',
-  borderWidth: 1,
-  borderColor: '#ddd', // 연한 회색 테두리
-  borderRadius: 12,
-  padding: 12,
-  backgroundColor: '#fff', // 흰색 배경
-  alignItems: 'center',
-},
-
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
   image: { width: 70, height: 90, marginRight: 12, borderRadius: 4, resizeMode: 'cover' },
   imagePlaceholder: {
     width: 70,
@@ -105,6 +112,7 @@ const styles = StyleSheet.create({
   type: { fontSize: 14, color: '#333', marginBottom: 4 },
   risk: { fontSize: 14, color: 'red', fontWeight: '600' },
 });
+
 
 
 // import { useFocusEffect } from '@react-navigation/native';

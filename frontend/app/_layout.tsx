@@ -1,11 +1,12 @@
-import { Tabs } from 'expo-router';
+// app/_layout.tsx
 import { Ionicons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
 
-export default function Layout() {
+export default function RootLayout() {
   return (
-    <Tabs initialRouteName="checklist/index">
+    <Tabs>
       <Tabs.Screen
-        name="checklist/index"
+        name="checklist"
         options={{
           title: '체크리스트',
           tabBarIcon: ({ color, size }) => (
@@ -14,7 +15,7 @@ export default function Layout() {
         }}
       />
       <Tabs.Screen
-        name="documents/index"
+        name="documents"
         options={{
           title: '업로드된 문서',
           tabBarIcon: ({ color, size }) => (
