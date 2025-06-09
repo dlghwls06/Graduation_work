@@ -6,140 +6,140 @@ const multer = require('multer');
 const router = express.Router();
 require('dotenv').config();
 
+
 // ✅ 확장자 포함 저장을 위한 multer 설정
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'public/uploads/');
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname); // .jpg, .png 등
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
-  }
+    destination: function (req, file, cb) {
+        cb(null, 'public/uploads/');
+    },
+    filename: function (req, file, cb) {
+        const ext = path.extname(file.originalname); // .jpg, .png 등
+        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+        cb(null, uniqueName);
+    },
 });
 const upload = multer({ storage });
 
 router.post('/upload', upload.single('image'), async (req, res) => {
-  const file = req.file;
-  const { width, height } = req.body;
-  const imageWidth = parseInt(width, 10);
-  const imageHeight = parseInt(height, 10);
+    const file = req.file;
+    const { width, height } = req.body;
+    const imageWidth = parseInt(width, 10);
+    const imageHeight = parseInt(height, 10);
 
-  console.log('!!클라이언트 전달 해상도:', imageWidth, imageHeight);
+    console.log('!!클라이언트 전달 해상도:', imageWidth, imageHeight);
 
-
-  if (!file) {
-    return res.status(400).json({ message: '이미지를 업로드해야 합니다.' });
-  }
-
-  try {
-    // 이미지 base64로 인코딩
-    const imagePath = path.join(__dirname, '..', file.path);
-    const imageBuffer = fs.readFileSync(imagePath);
-    const base64Image = imageBuffer.toString('base64');
-
-    // OCR API 호출
-    const ocrResponse = await axios.post(
-      process.env.OCR_URL,
-      {
-        images: [
-          {
-            format: 'jpg',
-            name: 'ocr_image',
-            data: base64Image,
-          },
-        ],
-        requestId: Date.now().toString(),
-        version: 'V1',
-        timestamp: Date.now(),
-      },
-      {
-        headers: {
-          'X-OCR-SECRET': process.env.OCR_KEY,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    const fields = ocrResponse.data.images[0].fields;
-    const text = fields.map(f => f.inferText).join('\n');
-
-    // 특약사항 문장 추출
-    let inSpecialClause = false;
-    let currentClause = '';
-    let clauseList = [];
-    let endDetected = false;
-    let currentStart = null;
-    let currentEnd = null;
-
-    fields.forEach((field) => {
-      const word = field.inferText.trim();
-      const coords = field.boundingPoly?.vertices;
-
-      if (!inSpecialClause && word.includes('특약사항')) {
-        inSpecialClause = true;
-        return;
-      }
-      if (!inSpecialClause || endDetected) return;
-
-      if (word.includes('본') && word.includes('계약')) {
-        if (currentClause) {
-          clauseList.push({
-            text: currentClause.trim(),
-            coordStart: currentStart,
-            coordEnd: currentEnd,
-          });
-        }
-        endDetected = true;
-        return;
-      }
-
-      const match = word.match(/^(\d+)\.(.*)/);
-      if (match) {
-        if (currentClause) {
-          clauseList.push({
-            text: currentClause.trim(),
-            coordStart: currentStart,
-            coordEnd: currentEnd,
-          });
-        }
-        currentClause = `${match[1]}. ${match[2]} `;
-        currentStart = coords?.[0] && coords?.[3] ? [coords[0], coords[3]] : null;
-        currentEnd = coords?.[1] && coords?.[2] ? [coords[1], coords[2]] : null;
-        return;
-      }
-
-      if (!currentStart && coords?.[0] && coords?.[3]) {
-        currentStart = [coords[0], coords[3]];
-      }
-      if (coords?.[1] && coords?.[2]) {
-        currentEnd = [coords[1], coords[2]];
-      }
-
-      currentClause += word + ' ';
-    });
-
-    if (currentClause && !endDetected) {
-      clauseList.push({
-        text: currentClause.trim(),
-        coordStart: currentStart,
-        coordEnd: currentEnd,
-      });
+    if (!file) {
+        return res.status(400).json({ message: '이미지를 업로드해야 합니다.' });
     }
 
-    // 🔸 DB 저장
-    const fileUrl = `/uploads/${file.filename}`;
-    const [insertResult] = await req.db.execute(
-      `INSERT INTO user_contract_progress (users_contracts_id, file_url, image_width, image_height) VALUES (?, ?, ?, ?)`,
-      [1, fileUrl, imageWidth, imageHeight]
-      
-    );
-    const situationId = insertResult.insertId;
+    try {
+        // 이미지 base64로 인코딩
+        const imagePath = path.join(__dirname, '..', file.path);
+        const imageBuffer = fs.readFileSync(imagePath);
+        const base64Image = imageBuffer.toString('base64');
 
-    for (let i = 1; i < clauseList.length; i++) {
-      const clause = clauseList[i];
-      await req.db.execute(
-        `INSERT INTO ocr_result (
+        // OCR API 호출
+        const ocrResponse = await axios.post(
+            process.env.OCR_URL,
+            {
+                images: [
+                    {
+                        format: 'jpg',
+                        name: 'ocr_image',
+                        data: base64Image,
+                    },
+                ],
+                requestId: Date.now().toString(),
+                version: 'V1',
+                timestamp: Date.now(),
+            },
+            {
+                headers: {
+                    'X-OCR-SECRET': process.env.OCR_KEY,
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        const fields = ocrResponse.data.images[0].fields;
+        const text = fields.map((f) => f.inferText).join('\n');
+        // console.log("OCR 추출 결과", text)
+
+        // 특약사항 문장 추출
+        let inSpecialClause = false;
+        let currentClause = '';
+        let clauseList = [];
+        let endDetected = false;
+        let currentStart = null;
+        let currentEnd = null;
+
+        fields.forEach((field) => {
+            const word = field.inferText.trim();
+            const coords = field.boundingPoly?.vertices;
+
+            if (!inSpecialClause && word.includes('특약사항')) {
+                inSpecialClause = true;
+                return;
+            }
+            if (!inSpecialClause || endDetected) return;
+
+            if (word.includes('본') && word.includes('계약')) {
+                if (currentClause) {
+                    clauseList.push({
+                        text: currentClause.trim(),
+                        coordStart: currentStart,
+                        coordEnd: currentEnd,
+                    });
+                }
+                endDetected = true;
+                return;
+            }
+
+            const match = word.match(/^(\d+)\.(.*)/);
+            if (match) {
+                if (currentClause) {
+                    clauseList.push({
+                        text: currentClause.trim(),
+                        coordStart: currentStart,
+                        coordEnd: currentEnd,
+                    });
+                }
+                currentClause = `${match[1]}. ${match[2]} `;
+                currentStart = coords?.[0] && coords?.[3] ? [coords[0], coords[3]] : null;
+                currentEnd = coords?.[1] && coords?.[2] ? [coords[1], coords[2]] : null;
+                return;
+            }
+
+            if (!currentStart && coords?.[0] && coords?.[3]) {
+                currentStart = [coords[0], coords[3]];
+            }
+            if (coords?.[1] && coords?.[2]) {
+                currentEnd = [coords[1], coords[2]];
+            }
+
+            currentClause += word + ' ';
+        });
+
+        if (currentClause && !endDetected) {
+            clauseList.push({
+                text: currentClause.trim(),
+                coordStart: currentStart,
+                coordEnd: currentEnd,
+            });
+        }
+
+        // 🔸 DB 저장
+        const fileUrl = `/uploads/${file.filename}`;
+        const [insertResult] = await req.db.execute(
+            `INSERT INTO user_contract_progress (users_contracts_id, file_url, image_width, image_height) VALUES (?, ?, ?, ?)`,
+            [1, fileUrl, imageWidth, imageHeight]
+        );
+        const situationId = insertResult.insertId;
+
+        for (let i = 1; i < clauseList.length; i++) {
+            const clause = clauseList[i];
+            await req.db.execute(
+                `INSERT INTO ocr_result (
           situation_id,
           risk_message,
           one_coordinate,
@@ -147,45 +147,42 @@ router.post('/upload', upload.single('image'), async (req, res) => {
           three_coordinate,
           four_coordinate
         ) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          situationId,
-          clause.text,
-          clause.coordStart?.[0] ? `${clause.coordStart[0].x},${clause.coordStart[0].y}` : null,
-          clause.coordEnd?.[0] ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}` : null,
-          clause.coordEnd?.[1] ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}` : null,
-          clause.coordStart?.[1] ? `${clause.coordStart[1].x},${clause.coordStart[1].y}` : null,
-        ]
-      );
+                [
+                    situationId,
+                    clause.text,
+                    clause.coordStart?.[0] ? `${clause.coordStart[0].x},${clause.coordStart[0].y}` : null,
+                    clause.coordEnd?.[0] ? `${clause.coordEnd[0].x},${clause.coordEnd[0].y}` : null,
+                    clause.coordEnd?.[1] ? `${clause.coordEnd[1].x},${clause.coordEnd[1].y}` : null,
+                    clause.coordStart?.[1] ? `${clause.coordStart[1].x},${clause.coordStart[1].y}` : null,
+                ]
+            );
+        }
+
+        // 🔸 FastAPI로 문장 전송
+        const clauseTexts = clauseList.map((clause) => clause.text);
+        try {
+            const fastApiResponse = await axios.post(`http://${process.env.BASE_URL}:5050/analyze`, {
+                situation_id: situationId,
+                sentences: clauseTexts,
+            });
+            console.log('✅ FastAPI 응답 결과:', fastApiResponse.data);
+        } catch (err) {
+            console.error('❌ FastAPI 통신 실패:', err.message);
+        }
+
+        // 🔸 클라이언트 응답
+        res.json({
+            text,
+            filename: file.filename,
+            path: fileUrl,
+        });
+    } catch (error) {
+        console.error('OCR 실패:', error.response?.data || error.message);
+        res.status(500).json({ message: 'OCR 처리 실패' });
     }
-
-    // 🔸 FastAPI로 문장 전송
-    const clauseTexts = clauseList.map(clause => clause.text);
-    try {
-      const fastApiResponse = await axios.post('http://192.168.1.176:5050/analyze', {
-        situation_id: situationId,
-        sentences: clauseTexts
-      });
-      console.log("✅ FastAPI 응답 결과:", fastApiResponse.data);
-    } catch (err) {
-      console.error("❌ FastAPI 통신 실패:", err.message);
-    }
-
-    // 🔸 클라이언트 응답
-    res.json({
-      text,
-      filename: file.filename,
-      path: fileUrl,
-    });
-
-  } catch (error) {
-    console.error('OCR 실패:', error.response?.data || error.message);
-    res.status(500).json({ message: 'OCR 처리 실패' });
-  }
 });
 
 module.exports = router;
-
-
 
 // const express = require('express');
 // const fs = require('fs');
@@ -239,7 +236,7 @@ module.exports = router;
 //     // OCR 결과에서 텍스트 추출
 //     const fields = ocrResponse.data.images[0].fields;
 //     const text = fields.map(f => f.inferText).join('\n');
-    
+
 //     let inSpecialClause = false;
 //     let currentClause = '';
 //     let clauseList = [];
@@ -332,7 +329,6 @@ module.exports = router;
 //       const endX = clause.coordEnd?.[0]?.x ?? null;
 //       const endY = clause.coordEnd?.[0]?.y ?? null;
 
-
 //       await req.db.execute(
 //       `INSERT INTO ocr_result (
 //         situation_id,
@@ -359,7 +355,7 @@ module.exports = router;
 //           : null,
 //       ]
 //     );
-      
+
 //     }
 //         // FastAPI로 문장들만 전송
 // const clauseTexts = clauseList.map(clause => clause.text);
@@ -375,8 +371,6 @@ module.exports = router;
 //   console.error("❌ FastAPI 통신 실패:", err.message);
 // }
 
-
-
 //     res.json({
 //       text,
 //       filename: file.filename,
@@ -387,6 +381,5 @@ module.exports = router;
 //     res.status(500).json({ message: 'OCR 처리 실패' });
 //   }
 // });
-
 
 // module.exports = router;

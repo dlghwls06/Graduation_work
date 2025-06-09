@@ -5,7 +5,7 @@ require('dotenv').config();
 
 router.post('/generate', async (req, res) => {
   const { risky_sentences, situation_id } = req.body;
-  console.log("시츄에이션아이디", situation_id);
+  console.log('시츄에이션아이디', situation_id);
 
   if (!risky_sentences || !Array.isArray(risky_sentences)) {
     return res.status(400).json({ message: 'risky_sentences가 유효하지 않음' });
@@ -15,7 +15,7 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ message: 'situation_id가 필요합니다.' });
   }
 
-  const message = risky_sentences.map(item => item.sentence).join('\n\n');
+  const message = risky_sentences.map((item) => item.sentence).join('\n\n');
 
   try {
     const response = await axios.post(
@@ -38,6 +38,7 @@ router.post('/generate', async (req, res) => {
 4. 위험하다고 판단되면 아래 형식을 무조건 따르세요:
    - 조항 번호는 반드시 '숫자.' 형식으로 시작해야 합니다 (예: '1.', '2.', '3.' 등)
    - 추천 문장은 반드시 **3개**를 작성해야 합니다. (2개 이하 절대 금지)
+5. 위험 문장 원문은 절대 수정하지 마세요. 그대로 출력하세요.
 
 ---
 
@@ -50,8 +51,8 @@ router.post('/generate', async (req, res) => {
 - 추천 문장 3: 보다 공정한 문장 예시
 ***
 
-위 형식 예시는 무조건 따르세요.  
-일반적 조건은 출력하지 마세요.  
+위 형식 예시는 무조건 따르세요.
+일반적 조건은 출력하지 마세요. 
 위험하지 않은 문장은 절대 포함하지 마세요.
 `
           },
@@ -70,77 +71,88 @@ router.post('/generate', async (req, res) => {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.CLOVA_TEST_KEY}`,
-          'Accept': 'application/json'
+          Authorization: `Bearer ${process.env.CLOVA_TEST_KEY}`,
+          Accept: 'application/json'
         }
       }
     );
 
     const clovaContent = response.data?.result?.message?.content;
-    console.log("클로바 응답내용", clovaContent);
+    console.log('클로바 응답내용', clovaContent);
     if (!clovaContent) {
       return res.status(500).json({ message: 'CLOVA 응답이 비어있습니다.' });
     }
 
     const db = req.db;
-    console.log("디비연결 시작")
+    console.log('디비연결 시작');
     const connection = await db.getConnection();
     const inserted = [];
 
     try {
-      console.log("CLOVA 응답 파싱 시작");
+  console.log('CLOVA 응답 파싱 시작');
 
-      const regex = /(\d+)\.\s*"?(.+?)"?\s*\n- 이유:\s*(.*?)(?=\n\d+\.\s*"?|$)/gs;
-      const matches = [...clovaContent.matchAll(regex)];
-      console.log("🔥 추출된 위험 문장 수:", matches.length);
+  const regex =
+    /(\d+)\.\s*(?:\*\*\s*"?(.+?)"?\s*\*\*|"(.+?)"|(.+?))\s*\n\s*- 이유:\s*(.*?)(\n\s*- 추천 문장 1:.*?)?(?=\n\d+\.|\n?$)/gs;
 
+  const recommendRegex =
+    /- 추천 문장 1:\s*(.*?)\n\s*- 추천 문장 2:\s*(.*?)\n\s*- 추천 문장 3:\s*(.*?)(?:\n|$)/s;
 
-      for (const match of matches) {
-        const sentence = match[2].trim();
-        const explanation = match[3].trim();
+  const matches = [...clovaContent.matchAll(regex)];
 
-        const lowerExp = explanation.toLowerCase();
-        if (
-          lowerExp.includes("일반적인") ||
-          lowerExp.includes("관행") ||
-          lowerExp.includes("해당 내용을 언급하지") ||
-          lowerExp.includes("위험 조항이 아닙니다") ||
-          lowerExp.includes("수정할 필요가 없습니다")
-        ) {
-          continue;
-        }
+  for (const match of matches) {
+    const number = match[1]; // 조항 번호: '1', '2' 등
+    const sentenceBody = (match[2] || match[3] || match[4] || '').trim(); // 실제 문장
+    const fullSentence = `${number}. ${sentenceBody}`; // ✅ 번호 포함된 문장
+    const explanation = match[5].trim();
+    const restBlock = match[6] || '';
 
-        const [result] = await connection.execute(
-          `INSERT INTO risk_analysis_cases (situation_id, sentence, explanation) VALUES (?, ?, ?)`,
-          [situation_id, sentence, explanation]
-        );
-
-        const riskId = result.insertId;
-        inserted.push(riskId);
-
-        const recMatch = match[0].match(
-          /- 추천 문장 1: (.*?)\n?- 추천 문장 2: (.*?)\n?- 추천 문장 3: (.*?)(?=\n|$)/s
-        );
-
-        if (recMatch) {
-          const recs = [recMatch[1], recMatch[2], recMatch[3]];
-          for (const r of recs) {
-            await connection.execute(
-              `INSERT INTO risk_recommend_sentences (risk_analysis_id, recommend_sentence) VALUES (?, ?)`,
-              [riskId, r.trim()]
-            );
-          }
-        }
-      }
-
-      res.json({
-        message: '위험 조항 저장 완료',
-        savedCount: inserted.length,
-        savedIds: inserted
-      });
-    } finally {
-      connection.release(); // ✅ 반드시 release
+    const lowerExp = explanation.toLowerCase();
+    if (
+      lowerExp.includes('일반적인') ||
+      lowerExp.includes('관행') ||
+      lowerExp.includes('해당 내용을 언급하지') ||
+      lowerExp.includes('위험 조항이 아닙니다') ||
+      lowerExp.includes('문제가 없어') ||
+      lowerExp.includes('문제없어') ||
+      lowerExp.includes('해당 조항 자체') ||
+      lowerExp.includes('문제 없어') ||
+      lowerExp.includes('수정할 필요가 없습니다')
+    ) {
+      console.log(`🚫 필터링된 문장 (${number}): ${sentenceBody}`);
+      continue;
     }
+
+    const [result] = await connection.execute(
+      `INSERT INTO risk_analysis_cases (situation_id, sentence, explanation) VALUES (?, ?, ?)`,
+      [situation_id, fullSentence, explanation] // 번호 포함된 문장 저장
+    );
+
+    const riskId = result.insertId;
+    inserted.push(riskId);
+
+    const recMatch = restBlock.match(recommendRegex);
+    if (recMatch) {
+      const recs = [recMatch[1], recMatch[2], recMatch[3]];
+      for (const r of recs) {
+        await connection.execute(
+          `INSERT INTO risk_recommend_sentences (risk_analysis_id, recommend_sentence) VALUES (?, ?)`,
+          [riskId, r.trim()]
+        );
+      }
+    } else {
+      console.warn(`❌ 추천 문장 파싱 실패 (${number}):`, restBlock);
+    }
+  }
+
+  res.json({
+    message: '위험 조항 저장 완료',
+    savedCount: inserted.length,
+    savedIds: inserted
+  });
+} finally {
+  connection.release();
+}
+
   } catch (error) {
     console.error('❌ CLOVA API 오류:', error.response?.data || error.message);
     res.status(500).json({ message: 'CLOVA 호출 또는 저장 실패' });
@@ -150,15 +162,11 @@ router.post('/generate', async (req, res) => {
 module.exports = router;
 
 
-
-
-
 // const express = require('express');
 // const axios = require('axios');
 // const router = express.Router();
 
 // require('dotenv').config();
-
 
 // router.post('/generate', async (req, res) => {
 //   const { risky_sentences } = req.body;
@@ -211,4 +219,3 @@ module.exports = router;
 // });
 
 // module.exports = router;
-

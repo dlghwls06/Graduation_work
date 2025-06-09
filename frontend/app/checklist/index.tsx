@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { getChecklistByContractId } from '../../api/checklist';
-import ExamineButton from '../../components/ExamineButton'
-
+import ExamineButton from '../../components/ExamineButton';
 
 interface ChecklistItem {
     title: string;
@@ -83,11 +82,9 @@ export default function ChecklistScreen() {
                                     {item.details.map((detail, detailIdx) => (
                                         <View key={detailIdx} style={styles.detailRow}>
                                             <Text style={styles.detailText}>{detail}</Text>
-                                            {detail === '표준계약서 사용' && <ExamineButton/> }
+                                            {detail === '표준계약서 사용' && <ExamineButton />}
                                         </View>
                                     ))}
-
-                                    
                                 </View>
                             ))}
                         </View>
@@ -194,7 +191,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 14,
     },
-    debuasdsadgger:{
-        backgroundAttachment: 'Redirect'
-    }
+    debuasdsadgger: {
+        backgroundAttachment: 'Redirect',
+    },
 });

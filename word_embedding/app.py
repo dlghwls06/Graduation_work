@@ -88,7 +88,7 @@ async def analyze(input: AnalyzeRequest):
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    "http://192.168.1.176:4000/clova/generate",  # Node.js API 주소에 맞게 수정
+                    "http://172.20.10.2:4000/clova/generate",
                     json={
                         "situation_id": input.situation_id,  # 여기에 포함!
                         "risky_sentences": risky_only

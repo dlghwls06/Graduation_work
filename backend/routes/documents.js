@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
+require('dotenv').config();
 
-const BASE_URL = 'http://192.168.1.176:4000'; // ⚠️ 여기 본인 서버 주소/IP로 변경
+
+const BASE_URL = process.env.BASE_URL;
+console.log("백엔드 문서페이지유알엘", BASE_URL);
 
 router.get('/documents', async (req, res) => {
-  try {
-    const [rows] = await req.db.execute(`
+    try {
+        const [rows] = await req.db.execute(`
       SELECT 
         p.situation_id AS id,
         DATE_FORMAT(p.created_at, '%Y-%m-%d') AS date,
@@ -21,20 +24,22 @@ router.get('/documents', async (req, res) => {
       ORDER BY p.created_at DESC
     `);
 
-    const formatted = rows.map(row => ({
-      id: row.id,
-      date: row.date,
-      title: row.title,
-      type: row.type,
-      riskCount: row.riskCount,
-      file_url: row.file_url ? `${BASE_URL}${row.file_url}` : null, // 절대경로로 변경!
-    }));
+        const formatted = rows.map((row) => ({
+            id: row.id,
+            date: row.date,
+            title: row.title,
+            type: row.type,
+            riskCount: row.riskCount,
+            file_url: row.file_url ? `http://${BASE_URL}:4000${row.file_url}` : null, // 절대경로로 변경!
+        }));
 
-    res.json(formatted);
-  } catch (err) {
-    console.error('❌ 문서 목록 조회 실패:', err.message);
-    res.status(500).json({ message: '문서 목록 조회 실패' });
-  }
+        res.json(formatted);
+        // console.log("row.file_url", row.file_url)
+    }  
+    catch (err) {
+        console.error('❌ 문서 목록 조회 실패:', err.message);
+        res.status(500).json({ message: '문서 목록 조회 실패' });
+    }
 });
 
 module.exports = router;
