@@ -1,4 +1,3 @@
-import { BASE_URL } from '@env';
 import { useRoute } from '@react-navigation/native';
 import axios from 'axios';
 import { router } from 'expo-router';
@@ -34,13 +33,11 @@ export default function DocumentDetail() {
 
             while (retries > 0) {
                 try {
-                    const response = await axios.get(`${BASE_URL}/stack/result/${situationId}`);
+                    const response = await axios.get(`http://192.168.1.243:4000/stack/result/${situationId}`);
                     const data = response.data;
-                    console.log('📡 전체 응답:', response.data);
+                    // console.log('📡 전체 응답:', response.data);
 
-                    console.log('@@@@@', response.data);
-
-                    setImageUrl(`${BASE_URL}${data.imageUrl}`);
+                    setImageUrl(`http://192.168.1.243:4000${data.imageUrl}`);
                     setImageWidth(data.imageWidth);
                     setImageHeight(data.imageHeight);
                     console.log('이미지 넓이', data.imageWidth);
@@ -48,10 +45,10 @@ export default function DocumentDetail() {
 
                     if (data.coordinates && data.coordinates.length > 0) {
                         setHighlightBoxes(data.coordinates);
-                        setNoRiskMessage(false); // ✅ 위험 조항 존재
+                        setNoRiskMessage(false); // 위험 조항 존재
                     } else {
                         setHighlightBoxes([]);
-                        setNoRiskMessage(true); // ✅ 위험 조항 없음
+                        setNoRiskMessage(true); // 위험 조항 없음
                     }
 
                     setLoading(false);
@@ -61,10 +58,10 @@ export default function DocumentDetail() {
                         if (err.response?.status === 404) {
                             console.warn('⚠️ 위험 문장이 없는 문서입니다.');
                             // 이미지라도 가져올 수 있도록 fallback 처리
-                            const fallback = await axios.get(`${BASE_URL}/fallback-image/${situationId}`);
+                            const fallback = await axios.get(`http://192.168.1.243:4000/fallback-image/${situationId}`);
                             const fallbackData = fallback.data;
 
-                            setImageUrl(`${BASE_URL}${fallbackData.imageUrl}`);
+                            setImageUrl(`http://192.168.1.243:4000${fallbackData.imageUrl}`);
                             setImageWidth(fallbackData.imageWidth);
                             setImageHeight(fallbackData.imageHeight);
                             setHighlightBoxes([]);
@@ -108,7 +105,7 @@ export default function DocumentDetail() {
                     const left = (box.x / imageWidth) * screenWidth;
                     const top = (box.y / imageHeight) * calculatedHeight;
                     const width = (box.width / imageWidth) * screenWidth;
-                    const height = (box.height / imageHeight) * calculatedHeight + 10;
+                    const height = (box.height / imageHeight) * calculatedHeight + 8;
 
                     return <View key={index} style={[styles.highlightBox, { left, top, width, height }]} />;
                 })}

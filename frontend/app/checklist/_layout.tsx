@@ -2,5 +2,5 @@
 import { Stack } from 'expo-router';
 
 export default function CheckListLayout() {
-    return <Stack screenOptions={{ headerShown: false }} />;
+    return <Stack screenOptions={{ title: '체크리스트', headerTitleAlign: 'center', headerShown: true }}/>;
 }

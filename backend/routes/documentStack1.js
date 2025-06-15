@@ -18,7 +18,7 @@ router.get('/result/:situationId', async (req, res) => {
         const [riskRows] = await req.db.execute('SELECT sentence FROM risk_analysis_cases WHERE situation_id = ?', [
             situationId,
         ]);
-        console.log("riskRows",[riskRows])
+        // console.log("riskRows",[riskRows])
 
         if (riskRows.length === 0) {
             // 위험 문장이 없지만 이미지 정보는 내려줘야 함

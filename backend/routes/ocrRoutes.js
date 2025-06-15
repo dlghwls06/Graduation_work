@@ -7,7 +7,7 @@ const router = express.Router();
 require('dotenv').config();
 
 
-// ✅ 확장자 포함 저장을 위한 multer 설정
+//확장자 포함 저장을 위한 multer 설정
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, 'public/uploads/');
@@ -128,7 +128,7 @@ router.post('/upload', upload.single('image'), async (req, res) => {
             });
         }
 
-        // 🔸 DB 저장
+        // DB 저장
         const fileUrl = `/uploads/${file.filename}`;
         const [insertResult] = await req.db.execute(
             `INSERT INTO user_contract_progress (users_contracts_id, file_url, image_width, image_height) VALUES (?, ?, ?, ?)`,
@@ -136,7 +136,8 @@ router.post('/upload', upload.single('image'), async (req, res) => {
         );
         const situationId = insertResult.insertId;
 
-        for (let i = 1; i < clauseList.length; i++) {
+        
+        for (let i = 0; i < clauseList.length; i++) {
             const clause = clauseList[i];
             await req.db.execute(
                 `INSERT INTO ocr_result (
@@ -158,19 +159,19 @@ router.post('/upload', upload.single('image'), async (req, res) => {
             );
         }
 
-        // 🔸 FastAPI로 문장 전송
+        // FastAPI로 문장 전송
         const clauseTexts = clauseList.map((clause) => clause.text);
         try {
-            const fastApiResponse = await axios.post(`http://${process.env.BASE_URL}:5050/analyze`, {
+            const fastApiResponse = await axios.post(`http://192.168.1.243:5050/analyze`, {
                 situation_id: situationId,
                 sentences: clauseTexts,
             });
-            console.log('✅ FastAPI 응답 결과:', fastApiResponse.data);
+            console.log('FastAPI 응답 결과:', fastApiResponse.data);
         } catch (err) {
-            console.error('❌ FastAPI 통신 실패:', err.message);
+            console.error('FastAPI 통신 실패:', err.message);
         }
 
-        // 🔸 클라이언트 응답
+        // 클라이언트 응답
         res.json({
             text,
             filename: file.filename,

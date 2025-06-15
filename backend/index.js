@@ -42,9 +42,9 @@ async function testDBConnection() {
         const connection = await pool.getConnection();
         await connection.query('SELECT 1');
         connection.release();
-        console.log('✅ DB 연결 성공!');
+        console.log('DB 연결 성공!');
     } catch (err) {
-        console.error('❌ DB 연결 실패:', err.message);
+        console.error('DB 연결 실패:', err.message);
         process.exit(1); // 실패 시 서버 종료
     }
 }
@@ -52,6 +52,6 @@ async function testDBConnection() {
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, async () => {
     //sadsad
-    console.log(`✅ Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
     await testDBConnection();
 });

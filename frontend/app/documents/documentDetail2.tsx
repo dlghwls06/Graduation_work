@@ -1,4 +1,3 @@
-import { BASE_URL } from '@env';
 import axios from 'axios';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -18,10 +17,10 @@ export default function DocumentDetail2() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await axios.get(`${BASE_URL}/stack2/detail_result/${situationId}`);
+                const res = await axios.get(`http://192.168.1.243:4000/stack2/detail_result/${situationId}`);
                 setData(res.data);
             } catch (err: any) {
-                console.error('⚠️ 위험 분석 결과 불러오기 실패:', err.response?.data || err.message);
+                console.error('위험 분석 결과 불러오기 실패:', err.response?.data || err.message);
             }
         };
         fetchData();

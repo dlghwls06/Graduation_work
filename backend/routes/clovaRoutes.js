@@ -102,7 +102,7 @@ router.post('/generate', async (req, res) => {
   for (const match of matches) {
     const number = match[1]; // 조항 번호: '1', '2' 등
     const sentenceBody = (match[2] || match[3] || match[4] || '').trim(); // 실제 문장
-    const fullSentence = `${number}. ${sentenceBody}`; // ✅ 번호 포함된 문장
+    const fullSentence = `${number}. ${sentenceBody}`; //번호 포함된 문장
     const explanation = match[5].trim();
     const restBlock = match[6] || '';
 
@@ -118,7 +118,7 @@ router.post('/generate', async (req, res) => {
       lowerExp.includes('문제 없어') ||
       lowerExp.includes('수정할 필요가 없습니다')
     ) {
-      console.log(`🚫 필터링된 문장 (${number}): ${sentenceBody}`);
+      console.log(`필터링된 문장 (${number}): ${sentenceBody}`);
       continue;
     }
 
@@ -140,21 +140,27 @@ router.post('/generate', async (req, res) => {
         );
       }
     } else {
-      console.warn(`❌ 추천 문장 파싱 실패 (${number}):`, restBlock);
+      console.warn(`추천 문장 파싱 실패 (${number}):`, restBlock);
     }
   }
+  // 위험 문장 개수를 progress 테이블에 저장
+await connection.execute(
+  `UPDATE user_contract_progress SET risk_count = ? WHERE situation_id = ?`,
+  [inserted.length, situation_id]
+);
 
   res.json({
     message: '위험 조항 저장 완료',
     savedCount: inserted.length,
     savedIds: inserted
   });
+  console.log("저장된 위험조항개수", inserted.length);
 } finally {
   connection.release();
 }
 
   } catch (error) {
-    console.error('❌ CLOVA API 오류:', error.response?.data || error.message);
+    console.error('CLOVA API 오류:', error.response?.data || error.message);
     res.status(500).json({ message: 'CLOVA 호출 또는 저장 실패' });
   }
 });
